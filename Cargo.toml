@@ -11,8 +11,4 @@ path = "src/lib.rs"
 name = "compiler_bin"
 path = "src/main.rs"
 
-[[bin]]
-name = "fromstr"
-path = "src/tests.rs"
-
 [dependencies]
