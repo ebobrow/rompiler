@@ -6,6 +6,12 @@ The R stands for both Rust and Racket because I am a wordsmith at heart.
 
 blah blah blah
 
+## Tests
+
+Testing is done in the `test.sh` script. The `run_test` function is called
+where the first argument is a Racket string and the second argument is the
+expected output. To run the test suite, run `./test.sh`.
+
 ## x86_64 Assembly Language
 
 blah blah blah

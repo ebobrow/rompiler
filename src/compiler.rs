@@ -89,7 +89,7 @@ impl Compiler {
 
     pub fn compile(e: Expr) -> Vec<String> {
         let mut compiler = Compiler::new();
-        compiler.compile_tok(&Token::Expr(e), Some(Reg::RSI));
+        compiler.compile_tok(&Token::Expr(e), Some(Reg::RAX));
         compiler.lines
     }
 
