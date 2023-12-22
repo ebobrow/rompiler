@@ -8,9 +8,16 @@ blah blah blah
 
 ## Tests
 
-Testing is done in the `test.sh` script. The `run_test` function is called
-where the first argument is a Racket string and the second argument is the
-expected output. To run the test suite, run `./test.sh`.
+To run tests, use the command
+
+```sh
+cargo test
+```
+
+It will create two files in `target/tests`: an assembly file `a.asm` that
+contains test functions at labels `f0`..`fn` and a  C file `test.c` that calls
+the functions and checks their results. It then links the files and runs the
+binary.
 
 ## x86_64 Assembly Language
 

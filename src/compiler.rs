@@ -8,7 +8,7 @@ enum Reg {
     RBX,
     RCX,
     RDX,
-    RBP,
+    // RBP,
     RSI,
     RDI,
     R8,
@@ -72,7 +72,7 @@ impl Compiler {
                 Reg::RBX,
                 Reg::RCX,
                 Reg::RDX,
-                Reg::RBP,
+                // Reg::RBP,
                 Reg::RSI,
                 Reg::RDI,
                 Reg::R8,
@@ -103,26 +103,24 @@ impl Compiler {
                 "+" => {
                     // TODO: can add an arbitrary amount of numbers
                     assert_eq!(e.params.len(), 2);
-                    self.binop(&"add", &e.params[0], &e.params[1], target)
+                    self.binop("add", &e.params[0], &e.params[1], target)
                 }
                 "-" => {
                     assert_eq!(e.params.len(), 2);
-                    self.binop(&"sub", &e.params[0], &e.params[1], target)
+                    self.binop("sub", &e.params[0], &e.params[1], target)
                 }
                 "*" => {
                     assert_eq!(e.params.len(), 2);
-                    self.binop_in_reg("mul", Reg::RAX, &e.params[0], &e.params[1]);
-                    Reg::RAX
+                    self.binop_in_reg("imul", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
                 }
                 "/" => {
                     assert_eq!(e.params.len(), 2);
-                    self.binop_in_reg("div", Reg::RAX, &e.params[0], &e.params[1]);
-                    Reg::RAX
+                    self.preserve.insert(Reg::RDX); // remainder is stored in rdx
+                    self.binop_in_reg("idiv", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
                 }
                 "mod" => {
                     assert_eq!(e.params.len(), 2);
-                    self.binop_in_reg("div", Reg::RAX, &e.params[0], &e.params[1]);
-                    Reg::RDX
+                    self.binop_in_reg("idiv", Reg::RAX, Reg::RDX, &e.params[0], &e.params[1])
                 }
                 _ => unimplemented!(),
             },
@@ -142,7 +140,7 @@ impl Compiler {
         let val = match &c[..] {
             "#t" => "1",
             "#f" => "0",
-            _ => &c,
+            _ => c,
         };
         let out = target.unwrap_or_else(|| self.next_reg());
         self.l(format!("mov {out:?}, {val}"));
@@ -150,24 +148,40 @@ impl Compiler {
     }
 
     fn binop(&mut self, op: &str, p1: &Token, p2: &Token, target: Option<Reg>) -> Reg {
-        let out = self.compile_tok(p2, target);
+        let out = self.compile_tok(p1, target);
         self.preserve.insert(out);
 
-        let reg2 = self.compile_tok(p1, None);
+        let reg2 = self.compile_tok(p2, None);
 
         self.l(format!("{op} {out:?}, {reg2:?}"));
         self.preserve.remove(&out);
         out
     }
 
-    fn binop_in_reg(&mut self, op: &str, reg1: Reg, p1: &Token, p2: &Token) {
+    fn binop_in_reg(&mut self, op: &str, reg1: Reg, target: Reg, p1: &Token, p2: &Token) -> Reg {
+        let save_reg = self.preserve.contains(&reg1);
+        if save_reg {
+            self.l(format!("push {reg1:?}"));
+        }
+
         self.compile_tok(p1, Some(reg1));
         self.preserve.insert(reg1);
+        self.preserve.insert(target); // not strictly necessary but it simplifies things
 
         let reg2 = self.compile_tok(p2, None);
 
         self.l(format!("{op} {reg2:?}"));
         self.preserve.remove(&reg1);
+
+        if save_reg {
+            if reg1 == target {
+                self.l(format!("mov {reg2:?}, {reg1:?}"));
+                self.l(format!("pop {reg1:?}"));
+                return reg2;
+            }
+            self.l(format!("pop {reg1:?}"));
+        }
+        target
     }
 
     fn next_reg(&self) -> Reg {

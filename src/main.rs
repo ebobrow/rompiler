@@ -22,7 +22,7 @@ main:"#,
     .unwrap();
     for line in lines {
         file.write_all(line.as_bytes()).unwrap();
-        file.write(b"\n").unwrap();
+        file.write_all(b"\n").unwrap();
     }
     file.write_all(b"ret").unwrap();
 }
