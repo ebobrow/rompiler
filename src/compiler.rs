@@ -90,7 +90,9 @@ impl Compiler {
     pub fn compile(e: Expr) -> Vec<String> {
         let mut compiler = Compiler::new();
         compiler.compile_tok(&Token::Expr(e), Some(Reg::RAX));
-        compiler.lines
+        let result = compiler.lines;
+        assert_eq!(compiler.preserve.len(), 0);
+        result
     }
 
     fn l(&mut self, line: impl ToString) {
@@ -115,12 +117,14 @@ impl Compiler {
                 }
                 "/" => {
                     assert_eq!(e.params.len(), 2);
-                    self.preserve.insert(Reg::RDX); // remainder is stored in rdx
-                    self.binop_in_reg("idiv", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
+                    // self.preserve.insert(Reg::RDX); // remainder is stored in rdx
+                    // self.binop_in_reg("idiv", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
+                    self.div(Reg::RAX, &e.params[0], &e.params[1])
                 }
                 "mod" => {
-                    assert_eq!(e.params.len(), 2);
-                    self.binop_in_reg("idiv", Reg::RAX, Reg::RDX, &e.params[0], &e.params[1])
+                    // assert_eq!(e.params.len(), 2);
+                    // self.binop_in_reg("idiv", Reg::RAX, Reg::RDX, &e.params[0], &e.params[1])
+                    self.div(Reg::RDX, &e.params[0], &e.params[1])
                 }
                 _ => unimplemented!(),
             },
@@ -182,6 +186,45 @@ impl Compiler {
             self.l(format!("pop {reg1:?}"));
         }
         target
+    }
+
+    fn div(&mut self, out: Reg, p1: &Token, p2: &Token) -> Reg {
+        // RAX must contain the dividend
+        let save_rax = self.preserve.contains(&Reg::RAX);
+        if save_rax {
+            self.l("push rax");
+        }
+        self.preserve.insert(Reg::RAX);
+        // RDX must be empty
+        let save_rdx = self.preserve.contains(&Reg::RDX);
+        if save_rdx {
+            self.l("push rdx");
+        }
+        self.l("xor rdx, rdx");
+        self.preserve.insert(Reg::RDX);
+
+        self.compile_tok(p1, Some(Reg::RAX));
+        let reg2 = self.compile_tok(p2, None);
+        self.l(format!("idiv {reg2:?}"));
+
+        let mut actual_out = out;
+        if save_rdx {
+            if out == Reg::RDX {
+                actual_out = self.next_reg();
+                self.l(format!("move {actual_out:?}, rdx"));
+            }
+            self.l("pop rdx");
+        }
+        if save_rax {
+            if out == Reg::RAX {
+                actual_out = self.next_reg();
+                self.l(format!("move {actual_out:?}, rax"));
+            }
+            self.l("pop rax");
+        }
+        self.preserve.remove(&Reg::RAX);
+        self.preserve.remove(&Reg::RDX);
+        actual_out
     }
 
     fn next_reg(&self) -> Reg {

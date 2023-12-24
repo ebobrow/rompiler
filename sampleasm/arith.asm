@@ -2,7 +2,8 @@ global main
 
 section .text
 main:
-    mov     rax, 2
-    mov     rbx, 1
-    sub     rbx, rax
+    mov     rdx, 0
+    mov     rax, 5
+    mov     rbx, 2
+    div     rbx
     ret

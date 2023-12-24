@@ -19,6 +19,14 @@ contains test functions at labels `f0`..`fn` and a  C file `test.c` that calls
 the functions and checks their results. It then links the files and runs the
 binary.
 
+## TODO
+
+- [ ] Floating point numbers (do we have some sort of box datatype that points to the data or so we represent all numbers as floats?)
+- [ ] Lists
+- [ ] Local variables
+- [ ] Global variables
+- [ ] Functions
+
 ## x86_64 Assembly Language
 
 blah blah blah
