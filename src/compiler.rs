@@ -54,9 +54,17 @@ enum Reg {
 //     }
 // }
 
+fn assert_params(e: &Expr, n: usize) {
+    assert_eq!(e.params.len(), n);
+}
+
 pub struct Compiler {
     lines: Vec<String>,
     preserve: HashSet<Reg>,
+
+    /// Number of pushes to stack. If even, pointer will not be aligned after making a call and a
+    /// push must be made
+    rsp_parity: usize,
 
     /// Convenience variable, should be a constant
     all_regs: HashSet<Reg>,
@@ -67,6 +75,7 @@ impl Compiler {
         Self {
             lines: Vec::new(),
             preserve: HashSet::new(),
+            rsp_parity: 0,
             all_regs: HashSet::from([
                 Reg::RAX,
                 Reg::RBX,
@@ -90,9 +99,8 @@ impl Compiler {
     pub fn compile(e: Expr) -> Vec<String> {
         let mut compiler = Compiler::new();
         compiler.compile_tok(&Token::Expr(e), Some(Reg::RAX));
-        let result = compiler.lines;
         assert_eq!(compiler.preserve.len(), 0);
-        result
+        compiler.lines
     }
 
     fn l(&mut self, line: impl ToString) {
@@ -102,30 +110,51 @@ impl Compiler {
     fn compile_tok(&mut self, t: &Token, target: Option<Reg>) -> Reg {
         let out = match t {
             Token::Expr(e) => match &e.op[..] {
+                // Arithmetic operations
                 "+" => {
                     // TODO: can add an arbitrary amount of numbers
-                    assert_eq!(e.params.len(), 2);
+                    assert_params(e, 2);
                     self.binop("add", &e.params[0], &e.params[1], target)
                 }
                 "-" => {
-                    assert_eq!(e.params.len(), 2);
+                    assert_params(e, 2);
                     self.binop("sub", &e.params[0], &e.params[1], target)
                 }
                 "*" => {
-                    assert_eq!(e.params.len(), 2);
+                    assert_params(e, 2);
                     self.binop_in_reg("imul", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
                 }
                 "/" => {
-                    assert_eq!(e.params.len(), 2);
+                    assert_params(e, 2);
                     // self.preserve.insert(Reg::RDX); // remainder is stored in rdx
                     // self.binop_in_reg("idiv", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
                     self.div(Reg::RAX, &e.params[0], &e.params[1])
                 }
                 "mod" => {
-                    // assert_eq!(e.params.len(), 2);
+                    assert_params(e, 2);
                     // self.binop_in_reg("idiv", Reg::RAX, Reg::RDX, &e.params[0], &e.params[1])
                     self.div(Reg::RDX, &e.params[0], &e.params[1])
                 }
+
+                // List operations
+                "empty" => {
+                    assert_params(e, 0);
+                    self.call_function("empty")
+                }
+                f @ ("first" | "rest") => {
+                    assert_params(e, 1);
+                    self.call_one_param(f, &e.params[0])
+                }
+                "empty?" => {
+                    assert_params(e, 1);
+                    self.call_one_param("isempty", &e.params[0])
+                }
+                f @ ("cons" | "append") => {
+                    assert_params(e, 2);
+                    self.call_two_param(f, &e.params[0], &e.params[1])
+                }
+                "list" => self.call_on_stack("list", &e.params[..]),
+
                 _ => unimplemented!(),
             },
             Token::Const(c) => self.compile_constant(c, target),
@@ -225,6 +254,61 @@ impl Compiler {
         self.preserve.remove(&Reg::RAX);
         self.preserve.remove(&Reg::RDX);
         actual_out
+    }
+
+    fn call_function(&mut self, name: &str) -> Reg {
+        if self.rsp_parity % 2 == 0 {
+            self.l("sub rsp, 8");
+        }
+
+        self.l(format!("call {name}"));
+
+        if self.rsp_parity % 2 == 0 {
+            self.l("add rsp, 8");
+        }
+        Reg::RAX
+    }
+
+    fn call_one_param(&mut self, name: &str, p1: &Token) -> Reg {
+        self.compile_tok(p1, Some(Reg::RDI));
+
+        self.call_function(name)
+    }
+
+    fn call_two_param(&mut self, name: &str, p1: &Token, p2: &Token) -> Reg {
+        self.compile_tok(p1, Some(Reg::RDI));
+        self.preserve.insert(Reg::RDI);
+        self.compile_tok(p2, Some(Reg::RSI));
+        self.preserve.remove(&Reg::RDI);
+
+        self.call_function(name)
+    }
+
+    fn call_on_stack(&mut self, name: &str, params: &[Token]) -> Reg {
+        let stack_misaligned = (self.rsp_parity + params.len()) % 2 == 0;
+        if stack_misaligned {
+            self.l("sub rsp, 8");
+        }
+
+        for param in params {
+            let reg = self.compile_tok(param, None);
+            self.l(format!("push {reg:?}"));
+            self.rsp_parity += 1;
+        }
+
+        self.l(format!("mov rdi, {}", params.len()));
+        self.l(format!("call {name}"));
+
+        for param in params {
+            let reg = self.compile_tok(param, None);
+            self.l(format!("pop {reg:?}"));
+            self.rsp_parity -= 1;
+        }
+
+        if stack_misaligned {
+            self.l("add rsp, 8");
+        }
+        Reg::RAX
     }
 
     fn next_reg(&self) -> Reg {

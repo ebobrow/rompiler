@@ -1,71 +1,10 @@
-global main
-extern printf
-
-section .text
-main:
-    push    rbp
-    mov     rbp, rsp
-    sub     rsp, 88    ; custom heap :)
-
-    ; push    rax        ; align stack
-    mov     rax, 1
-    push    rax
-    mov     rax, 2
-    push    rax
-    mov     rax, 3
-    push    rax
-    mov     rdi, 3
-    call    list
-    pop     rbx
-    ; pop     rbx
-    pop     rbx
-    pop     rbx
-    push    rax
-    ; call    printlist
-
-    mov     rax, 4
-    push    rax
-    mov     rax, 5
-    push    rax
-    mov     rdi, 2
-    call    list
-    pop     rbx
-    pop     rbx
-    mov     rdi, rax
-    pop     rsi
-
-    call    append
-    mov     rdi, rax
-    call    printlist
-
-    ; call    empty      ; empty list in rax
-    ; mov     rsi, rax
-    ; mov     rdi, 1
-    ; call    cons       ; cons 1 onto empty list
-    ; mov     rsi, rax
-    ; mov     rdi, 2
-    ; call    cons       ; cons 2 onto empty list
-    ; push    rax        ; save list
-    ; mov     rdi, rax
-    ; call    first
-    ; mov     rdi, format
-    ; mov     rsi, rax
-    ; xor     rax, rax
-    ; call    printf
-    ; pop     rax
-    ; mov     rdi, rax
-    ; call    rest
-    ; mov     rdi, rax
-    ; call    first
-    ; mov     rdi, format
-    ; mov     rsi, rax
-    ; xor     rax, rax
-    ; call    printf
-
-    add     rsp, 88
-    pop     rbp
-    xor     rax, rax
-    ret
+global empty
+global cons
+global isempty
+global first
+global rest
+global list
+global append
 
 ; Empty
 ;   Takes no arguments; returns an empty list
@@ -109,28 +48,6 @@ first:
 rest:
     sub     rdi, 8
     mov     rax, [rdi]
-    ret
-
-; PrintList
-;   Arguments: list in rdi
-;   Returns nothing
-;   Prints the list one element at a time, assuming all are integers
-printlist:
-    push    rbx
-    call    first       ; put first element in rax
-    mov     rbx, rdi    ; Store list in rbx
-    mov     rdi, format ; move format string to rdi
-    mov     rsi, rax    ; move first element to rsi
-    xor     eax, eax    ; zero out al
-    call    printf
-    mov     rdi, rbx    ; move array into rdi
-    call    rest        ; store rest in rax
-    pop     rbx
-    cmp     rax, 0
-    je      end_printlist
-    mov     rdi, rax
-    jmp     printlist
-end_printlist:
     ret
 
 ; List

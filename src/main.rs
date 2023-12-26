@@ -1,7 +1,8 @@
 use std::{
     env,
     fs::{self, File},
-    io::Write,
+    io::{self, Write},
+    process::Command,
 };
 
 use compiler_lib::{Compiler, Parser};
@@ -14,15 +15,50 @@ fn main() {
     let lines = Compiler::compile(e);
 
     let mut file = File::create("a.asm").unwrap();
+    file.write_all(b"global main\n").unwrap();
     file.write_all(
-        br#"global main
-section .text
-main:"#,
+        br#"section .text
+"#,
+    )
+    .unwrap();
+
+    // custom heap (there's gotta be a better way)
+    file.write_all(
+        br#"main:
+push rbp
+mov rbp, rsp
+sub rsp, 88
+"#,
     )
     .unwrap();
     for line in lines {
         file.write_all(line.as_bytes()).unwrap();
         file.write_all(b"\n").unwrap();
     }
-    file.write_all(b"ret").unwrap();
+    file.write_all(
+        br#"add rsp, 88
+pop rbp
+ret
+"#,
+    )
+    .unwrap();
+
+    for stdlib in fs::read_dir("src/stdlib").unwrap() {
+        file.write_all(
+            format!("%include '{}'\n", stdlib.unwrap().path().to_str().unwrap()).as_bytes(),
+        )
+        .unwrap();
+    }
+
+    Command::new("nasm")
+        .args(["-f", "elf64", "a.asm", "-o", "a.o"])
+        .output()
+        .unwrap();
+
+    let output = Command::new("gcc")
+        .args(["-no-pie", "a.o"])
+        .output()
+        .unwrap();
+    io::stdout().write_all(&output.stdout).unwrap();
+    io::stderr().write_all(&output.stderr).unwrap();
 }
