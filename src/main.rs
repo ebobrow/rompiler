@@ -27,6 +27,7 @@ fn main() {
         br#"main:
 push rbp
 mov rbp, rsp
+sub rbp, 8
 sub rsp, 88
 "#,
     )

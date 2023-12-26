@@ -290,7 +290,7 @@ impl Compiler {
             self.l("sub rsp, 8");
         }
 
-        for param in params {
+        for param in params.iter().rev() {
             let reg = self.compile_tok(param, None);
             self.l(format!("push {reg:?}"));
             self.rsp_parity += 1;
@@ -299,8 +299,8 @@ impl Compiler {
         self.l(format!("mov rdi, {}", params.len()));
         self.l(format!("call {name}"));
 
-        for param in params {
-            let reg = self.compile_tok(param, None);
+        for _ in params {
+            let reg = self.next_reg();
             self.l(format!("pop {reg:?}"));
             self.rsp_parity -= 1;
         }

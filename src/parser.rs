@@ -31,7 +31,7 @@ impl Parser {
         assert_eq!(self.advance(), Some('('));
         self.skip_whitespace();
         let mut op = String::new();
-        while self.peek_is(|c| !c.is_whitespace()) {
+        while self.peek_is(|c| !c.is_whitespace() && c != ')') {
             op.push(self.advance().unwrap());
         }
         self.skip_whitespace();

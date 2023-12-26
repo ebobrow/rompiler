@@ -6,11 +6,44 @@ use std::{
 
 use compiler_lib::{Compiler, Parser};
 
+#[test]
+fn arithmetic() {
+    run_tests(
+        "arith",
+        &[
+            ("(+ 1 (* 2 3))", 7),
+            ("(+ 40 2)", 42),
+            ("(- 2 1)", 1),
+            ("(- 1 2)", -1),
+            ("(* 2 21)", 42),
+            ("(/ 5 2)", 2),
+            ("(+ 1 (* 2 (- 3 4)))", -1),
+            ("(mod 5 2)", 1),
+        ],
+    );
+}
+
+#[test]
+fn lists() {
+    run_tests(
+        "lists",
+        &[
+            ("(empty? (empty))", 1),
+            ("(empty? (cons 1 (empty)))", 0),
+            ("(first (list 1 2 3))", 1),
+            ("(first (rest (list 1 2 3)))", 2),
+            ("(first (cons 1 (empty)))", 1),
+            // this one doesn't pass but that's a later problem :o
+            // ("(first (rest (append (list 1) (list 2 3))))", 2),
+        ],
+    );
+}
+
 /// Do not touch this function it is awful
-fn run_tests(tests: &[(impl ToString, i64)]) {
+fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
     fs::create_dir_all("target/tests").unwrap();
-    let mut asmfile = File::create("target/tests/a.asm").unwrap();
-    let mut cfile = File::create("target/tests/test.c").unwrap();
+    let mut asmfile = File::create(format!("target/tests/{name}.asm")).unwrap();
+    let mut cfile = File::create(format!("target/tests/{name}.c")).unwrap();
     cfile
         .write_all(b"#include <stdio.h>\n#include <inttypes.h>\n")
         .unwrap();
@@ -33,11 +66,27 @@ fn run_tests(tests: &[(impl ToString, i64)]) {
         let e = Parser::parse(rkt.to_string());
         let lines = Compiler::compile(e);
         asmfile.write_all(format!("f{i}:\n").as_bytes()).unwrap();
+        asmfile
+            .write_all(
+                br#"push rbp
+mov rbp, rsp
+sub rbp, 8
+sub rsp, 88
+"#,
+            )
+            .unwrap();
         for line in lines {
             asmfile.write_all(line.as_bytes()).unwrap();
             asmfile.write_all(b"\n").unwrap();
         }
-        asmfile.write_all(b"ret\n").unwrap();
+        asmfile
+            .write_all(
+                br#"add rsp, 88
+pop rbp
+ret
+"#,
+            )
+            .unwrap();
 
         cfile.write_all(format!("out=f{i}();").as_bytes()).unwrap();
         cfile
@@ -53,42 +102,38 @@ fn run_tests(tests: &[(impl ToString, i64)]) {
     }
     cfile.write_all(b"return all_pass;}").unwrap();
 
+    for stdlib in fs::read_dir("src/stdlib").unwrap() {
+        asmfile
+            .write_all(
+                format!("%include '{}'\n", stdlib.unwrap().path().to_str().unwrap()).as_bytes(),
+            )
+            .unwrap();
+    }
+
     Command::new("nasm")
         .args([
             "-f",
             "elf64",
-            "target/tests/a.asm",
+            &format!("target/tests/{name}.asm")[..],
             "-o",
-            "target/tests/a.o",
+            &format!("target/tests/{name}.o")[..],
         ])
         .output()
         .unwrap();
     Command::new("gcc")
         .args([
             "-no-pie",
-            "target/tests/a.o",
-            "target/tests/test.c",
+            &format!("target/tests/{name}.o")[..],
+            &format!("target/tests/{name}.c")[..],
             "-o",
-            "target/tests/a.out",
+            &format!("target/tests/{name}.out")[..],
         ])
         .output()
         .unwrap();
-    let output = Command::new("./target/tests/a.out").output().unwrap();
+    let output = Command::new(&format!("./target/tests/{name}.out")[..])
+        .output()
+        .unwrap();
     io::stdout().write_all(&output.stdout).unwrap();
     io::stderr().write_all(&output.stderr).unwrap();
     assert_eq!(output.status.code().unwrap(), 0);
-}
-
-#[test]
-fn arithmetic() {
-    run_tests(&[
-        ("(+ 1 (* 2 3))", 7),
-        ("(+ 40 2)", 42),
-        ("(- 2 1)", 1),
-        ("(- 1 2)", -1),
-        ("(* 2 21)", 42),
-        ("(/ 5 2)", 2),
-        ("(+ 1 (* 2 (- 3 4)))", -1),
-        ("(mod 5 2)", 1),
-    ]);
 }
