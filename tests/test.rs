@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use compiler_lib::{Compiler, Parser};
+use compiler_lib::{Compiler, Lexer, Parser};
 
 #[test]
 fn arithmetic() {
@@ -75,7 +75,7 @@ fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
         .unwrap();
 
     for (i, (rkt, expected)) in tests.iter().enumerate() {
-        let e = Parser::parse(rkt.to_string());
+        let e = Parser::parse(Lexer::lex(rkt.to_string()));
         let lines = Compiler::compile(e);
         asmfile.write_all(format!("f{i}:\n").as_bytes()).unwrap();
         asmfile

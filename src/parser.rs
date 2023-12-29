@@ -1,136 +1,130 @@
+use crate::lexer::Token;
+
 #[derive(Debug, PartialEq)]
-pub enum Token {
+pub enum Node {
     Expr(Expr),
-    Const(String),
+    String(String),
+    Float(f64),
+    Integer(i64),
     LetExpr(LetExpr),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Expr {
     pub op: String,
-    pub params: Vec<Token>,
+    pub params: Vec<Node>,
 }
 
 impl Expr {
-    pub fn new(op: String, params: Vec<Token>) -> Self {
+    pub fn new(op: String, params: Vec<Node>) -> Self {
         Self { op, params }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct LetExpr {
-    pub bindings: Vec<(String, Token)>,
-    pub body: Box<Token>,
+    pub bindings: Vec<(String, Node)>,
+    pub body: Box<Node>,
 }
 
 pub struct Parser {
     ptr: usize,
-    data: String,
+    data: Vec<Token>,
 }
 
 impl Parser {
-    pub fn parse(data: String) -> Token {
+    pub fn parse(data: Vec<Token>) -> Node {
         let mut parser = Parser { ptr: 0, data };
         parser.parse_expr()
     }
 
-    fn parse_expr(&mut self) -> Token {
-        assert_eq!(self.advance(), Some('('));
-        self.skip_whitespace();
-        let mut op = String::new();
-        while self.peek_is(|c| !c.is_whitespace() && c != ')') {
-            op.push(self.advance().unwrap());
-        }
-        self.skip_whitespace();
+    fn parse_expr(&mut self) -> Node {
+        assert_eq!(self.advance(), &Token::LeftParen);
+        let op = self.consume_ident().clone().inner_ident();
         if op == "let*" {
-            Token::LetExpr(self.parse_let_expr())
+            Node::LetExpr(self.parse_let_expr())
         } else {
             let mut params = Vec::new();
-            while self.peek_is(|c| c != ')') {
+            while self.peek_is(|c| c != &Token::RightParen) {
                 params.push(self.parse_param());
-                self.skip_whitespace();
             }
             let e = Expr::new(op, params);
-            assert_eq!(self.advance(), Some(')'));
-            Token::Expr(e)
+            assert_eq!(self.advance(), &Token::RightParen);
+            Node::Expr(e)
         }
     }
 
     fn parse_let_expr(&mut self) -> LetExpr {
-        assert_eq!(self.advance(), Some('('));
-        self.skip_whitespace();
+        assert_eq!(self.advance(), &Token::LeftParen);
         let mut bindings = Vec::new();
-        while self.peek_is(|c| c != ')') {
-            assert_eq!(self.advance(), Some('('));
-            let mut name = String::new();
-            while self.peek_is(|c| !c.is_whitespace()) {
-                name.push(self.advance().unwrap());
-            }
-            self.skip_whitespace();
+        while self.peek_is(|c| c != &Token::RightParen) {
+            assert_eq!(self.advance(), &Token::LeftParen);
+            let name = self.consume_ident().clone().inner_ident();
             let e = self.parse_param();
             bindings.push((name, e));
-            assert_eq!(self.advance(), Some(')'));
-            self.skip_whitespace();
+            assert_eq!(self.advance(), &Token::RightParen);
         }
-        assert_eq!(self.advance(), Some(')'));
-        self.skip_whitespace();
+        assert_eq!(self.advance(), &Token::RightParen);
         let body = self.parse_param();
-        assert_eq!(self.advance(), Some(')'));
+        assert_eq!(self.advance(), &Token::RightParen);
         LetExpr {
             bindings,
             body: Box::new(body),
         }
     }
 
-    fn parse_param(&mut self) -> Token {
-        if self.peek_is(|c| c == '(') {
+    fn parse_param(&mut self) -> Node {
+        if self.peek_is(|c| c == &Token::LeftParen) {
             self.parse_expr()
         } else {
-            let mut param = String::new();
-            while self.peek_is(|c| !c.is_whitespace() && c != ')') {
-                param.push(self.advance().unwrap());
+            match self.advance() {
+                Token::Integer(i) => Node::Integer(*i),
+                Token::Float(i) => Node::Float(*i),
+                Token::Identifier(i) => Node::String(i.to_string()),
+                _ => panic!(),
             }
-            Token::Const(param)
         }
     }
 
-    fn peek(&self) -> Option<char> {
-        self.data.chars().nth(self.ptr)
+    fn peek(&self) -> Option<&Token> {
+        self.data.get(self.ptr)
     }
 
-    fn peek_is(&self, f: impl Fn(char) -> bool) -> bool {
+    fn peek_is(&self, f: impl Fn(&Token) -> bool) -> bool {
         matches!(self.peek(), Some(c) if f(c))
     }
 
-    fn advance(&mut self) -> Option<char> {
+    fn advance(&mut self) -> &Token {
         self.ptr += 1;
-        self.data.chars().nth(self.ptr - 1)
+        &self.data[self.ptr - 1]
     }
 
-    fn skip_whitespace(&mut self) {
-        while self.peek_is(char::is_whitespace) {
-            self.advance();
-        }
+    fn consume_ident(&mut self) -> &Token {
+        let next = self.advance();
+        assert!(matches!(next, Token::Identifier(_)));
+        next
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::lexer::Lexer;
+
     use super::*;
 
     #[test]
     fn let_expr() {
-        let rkt = String::from("(let* ((x 5) (y 4)) (+ x y))");
+        let rkt = String::from("(let* ((x 5) (y 4.0)) (+ x y))");
         assert_eq!(
-            Parser::parse(rkt),
-            Token::LetExpr(LetExpr {
+            Parser::parse(Lexer::lex(rkt)),
+            Node::LetExpr(LetExpr {
                 bindings: vec![
-                    ("x".into(), Token::Const("5".into())),
-                    ("y".into(), Token::Const("4".into()))
+                    ("x".into(), Node::Integer(5)),
+                    ("y".into(), Node::Float(4.0))
                 ],
-                body: Box::new(Token::Expr(Expr {
+                body: Box::new(Node::Expr(Expr {
                     op: "+".into(),
-                    params: vec![Token::Const("x".into()), Token::Const("y".into())]
+                    params: vec![Node::String("x".into()), Node::String("y".into())]
                 }))
             })
         );

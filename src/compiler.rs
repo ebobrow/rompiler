@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::parser::{Expr, LetExpr, Token};
+use crate::parser::{Expr, LetExpr, Node};
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 enum Reg {
@@ -68,7 +68,7 @@ pub struct Compiler {
     rsp_parity: usize,
 
     /// Convenience variable, should be a constant
-    all_regs: HashSet<Reg>,
+    usable_regs: HashSet<Reg>,
 }
 
 impl Compiler {
@@ -78,14 +78,14 @@ impl Compiler {
             preserve: HashSet::new(),
             bindings: HashMap::new(),
             rsp_parity: 0,
-            all_regs: HashSet::from([
-                Reg::RAX,
+            usable_regs: HashSet::from([
+                // Reg::RAX,
                 Reg::RBX,
                 Reg::RCX,
-                Reg::RDX,
+                // Reg::RDX,
                 // Reg::RBP,
-                Reg::RSI,
-                Reg::RDI,
+                // Reg::RSI,
+                // Reg::RDI,
                 Reg::R8,
                 Reg::R9,
                 Reg::R10,
@@ -98,7 +98,7 @@ impl Compiler {
         }
     }
 
-    pub fn compile(t: Token) -> Vec<String> {
+    pub fn compile(t: Node) -> Vec<String> {
         let mut compiler = Compiler::new();
         compiler.compile_tok(&t, Some(Reg::RAX));
         assert_eq!(compiler.preserve.len(), 0);
@@ -110,9 +110,9 @@ impl Compiler {
         self.lines.push(line.to_string());
     }
 
-    fn compile_tok(&mut self, t: &Token, target: Option<Reg>) -> Reg {
+    fn compile_tok(&mut self, t: &Node, target: Option<Reg>) -> Reg {
         let out = match t {
-            Token::Expr(e) => match &e.op[..] {
+            Node::Expr(e) => match &e.op[..] {
                 // Arithmetic operations
                 "+" => {
                     // TODO: can add an arbitrary amount of numbers
@@ -160,8 +160,8 @@ impl Compiler {
 
                 _ => unimplemented!(),
             },
-            Token::Const(c) => self.compile_constant(c, target),
-            Token::LetExpr(LetExpr { bindings, body }) => self.compile_let_expr(bindings, body),
+            Node::LetExpr(LetExpr { bindings, body }) => self.compile_let_expr(bindings, body),
+            Node::String(_) | Node::Float(_) | Node::Integer(_) => self.compile_constant(t, target),
         };
         if let Some(target) = target {
             if out != target {
@@ -173,25 +173,37 @@ impl Compiler {
         }
     }
 
-    fn compile_constant(&mut self, c: &String, target: Option<Reg>) -> Reg {
-        let val = match &c[..] {
-            "#t" => "1",
-            "#f" => "0",
-            _ if c.chars().all(|c| c.is_numeric()) => c,
-            _ => {
-                let reg = self.bindings.get(c).unwrap().clone();
-                if let Some(target) = target {
-                    self.l(format!("mov {target:?}, {reg:?}"));
-                }
-                return reg;
+    fn compile_constant(&mut self, c: &Node, target: Option<Reg>) -> Reg {
+        match c {
+            Node::String(s) => {
+                let val = match &s[..] {
+                    "#t" => 1,
+                    "#f" => 0,
+                    _ => {
+                        let reg = self.bindings.get(s).unwrap().clone();
+                        if let Some(target) = target {
+                            self.l(format!("mov {target:?}, {reg:?}"));
+                        }
+                        return reg;
+                    }
+                };
+                let out = target.unwrap_or_else(|| self.next_reg());
+                self.l(format!("mov {out:?}, {val}"));
+                out
             }
-        };
-        let out = target.unwrap_or_else(|| self.next_reg());
-        self.l(format!("mov {out:?}, {val}"));
-        out
+            Node::Float(f) => {
+                todo!()
+            }
+            Node::Integer(i) => {
+                let out = target.unwrap_or_else(|| self.next_reg());
+                self.l(format!("mov {out:?}, {i}"));
+                out
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn compile_let_expr(&mut self, bindings: &[(String, Token)], body: &Token) -> Reg {
+    fn compile_let_expr(&mut self, bindings: &[(String, Node)], body: &Node) -> Reg {
         for (name, val) in bindings {
             let reg = self.next_reg();
             self.compile_tok(val, Some(reg));
@@ -206,7 +218,7 @@ impl Compiler {
         out
     }
 
-    fn binop(&mut self, op: &str, p1: &Token, p2: &Token, target: Option<Reg>) -> Reg {
+    fn binop(&mut self, op: &str, p1: &Node, p2: &Node, target: Option<Reg>) -> Reg {
         let out = self.compile_tok(p1, target);
         self.preserve.insert(out);
 
@@ -217,7 +229,7 @@ impl Compiler {
         out
     }
 
-    fn binop_in_reg(&mut self, op: &str, reg1: Reg, target: Reg, p1: &Token, p2: &Token) -> Reg {
+    fn binop_in_reg(&mut self, op: &str, reg1: Reg, target: Reg, p1: &Node, p2: &Node) -> Reg {
         let save_reg = self.preserve.contains(&reg1);
         if save_reg {
             self.l(format!("push {reg1:?}"));
@@ -243,7 +255,7 @@ impl Compiler {
         target
     }
 
-    fn div(&mut self, out: Reg, p1: &Token, p2: &Token) -> Reg {
+    fn div(&mut self, out: Reg, p1: &Node, p2: &Node) -> Reg {
         // RAX must contain the dividend
         let save_rax = self.preserve.contains(&Reg::RAX);
         if save_rax {
@@ -295,13 +307,13 @@ impl Compiler {
         Reg::RAX
     }
 
-    fn call_one_param(&mut self, name: &str, p1: &Token) -> Reg {
+    fn call_one_param(&mut self, name: &str, p1: &Node) -> Reg {
         self.compile_tok(p1, Some(Reg::RDI));
 
         self.call_function(name)
     }
 
-    fn call_two_param(&mut self, name: &str, p1: &Token, p2: &Token) -> Reg {
+    fn call_two_param(&mut self, name: &str, p1: &Node, p2: &Node) -> Reg {
         self.compile_tok(p1, Some(Reg::RDI));
         self.preserve.insert(Reg::RDI);
         self.compile_tok(p2, Some(Reg::RSI));
@@ -310,7 +322,7 @@ impl Compiler {
         self.call_function(name)
     }
 
-    fn call_on_stack(&mut self, name: &str, params: &[Token]) -> Reg {
+    fn call_on_stack(&mut self, name: &str, params: &[Node]) -> Reg {
         let stack_misaligned = (self.rsp_parity + params.len()) % 2 == 0;
         if stack_misaligned {
             self.l("sub rsp, 8");
@@ -338,6 +350,6 @@ impl Compiler {
     }
 
     fn next_reg(&self) -> Reg {
-        *self.all_regs.difference(&self.preserve).next().unwrap()
+        *self.usable_regs.difference(&self.preserve).next().unwrap()
     }
 }
