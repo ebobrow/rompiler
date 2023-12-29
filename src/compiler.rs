@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::parser::{Expr, Token};
+use crate::parser::{Expr, LetExpr, Token};
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 enum Reg {
@@ -61,6 +61,7 @@ fn assert_params(e: &Expr, n: usize) {
 pub struct Compiler {
     lines: Vec<String>,
     preserve: HashSet<Reg>,
+    bindings: HashMap<String, Reg>,
 
     /// Number of pushes to stack. If even, pointer will not be aligned after making a call and a
     /// push must be made
@@ -75,6 +76,7 @@ impl Compiler {
         Self {
             lines: Vec::new(),
             preserve: HashSet::new(),
+            bindings: HashMap::new(),
             rsp_parity: 0,
             all_regs: HashSet::from([
                 Reg::RAX,
@@ -96,10 +98,11 @@ impl Compiler {
         }
     }
 
-    pub fn compile(e: Expr) -> Vec<String> {
+    pub fn compile(t: Token) -> Vec<String> {
         let mut compiler = Compiler::new();
-        compiler.compile_tok(&Token::Expr(e), Some(Reg::RAX));
+        compiler.compile_tok(&t, Some(Reg::RAX));
         assert_eq!(compiler.preserve.len(), 0);
+        assert_eq!(compiler.bindings.len(), 0);
         compiler.lines
     }
 
@@ -158,6 +161,7 @@ impl Compiler {
                 _ => unimplemented!(),
             },
             Token::Const(c) => self.compile_constant(c, target),
+            Token::LetExpr(LetExpr { bindings, body }) => self.compile_let_expr(bindings, body),
         };
         if let Some(target) = target {
             if out != target {
@@ -173,10 +177,32 @@ impl Compiler {
         let val = match &c[..] {
             "#t" => "1",
             "#f" => "0",
-            _ => c,
+            _ if c.chars().all(|c| c.is_numeric()) => c,
+            _ => {
+                let reg = self.bindings.get(c).unwrap().clone();
+                if let Some(target) = target {
+                    self.l(format!("mov {target:?}, {reg:?}"));
+                }
+                return reg;
+            }
         };
         let out = target.unwrap_or_else(|| self.next_reg());
         self.l(format!("mov {out:?}, {val}"));
+        out
+    }
+
+    fn compile_let_expr(&mut self, bindings: &[(String, Token)], body: &Token) -> Reg {
+        for (name, val) in bindings {
+            let reg = self.next_reg();
+            self.compile_tok(val, Some(reg));
+            self.bindings.insert(name.to_string(), reg);
+            self.preserve.insert(reg);
+        }
+        let out = self.compile_tok(body, None);
+        for (name, _) in bindings {
+            let reg = self.bindings.remove(name).unwrap();
+            self.preserve.remove(&reg);
+        }
         out
     }
 

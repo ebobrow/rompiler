@@ -39,6 +39,18 @@ fn lists() {
     );
 }
 
+#[test]
+fn local_variables() {
+    run_tests(
+        "local vars",
+        &[
+            ("(let* ((x 1)) x)", 1),
+            ("(let* ((x 1) (y 2)) (+ x y))", 3),
+            ("(let* ((x 1) (y (+ 1 x))) (+ x y))", 3),
+        ],
+    );
+}
+
 /// Do not touch this function it is awful
 fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
     fs::create_dir_all("target/tests").unwrap();

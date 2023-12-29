@@ -1,10 +1,11 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     Expr(Expr),
     Const(String),
+    LetExpr(LetExpr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Expr {
     pub op: String,
     pub params: Vec<Token>,
@@ -16,18 +17,24 @@ impl Expr {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct LetExpr {
+    pub bindings: Vec<(String, Token)>,
+    pub body: Box<Token>,
+}
+
 pub struct Parser {
     ptr: usize,
     data: String,
 }
 
 impl Parser {
-    pub fn parse(data: String) -> Expr {
+    pub fn parse(data: String) -> Token {
         let mut parser = Parser { ptr: 0, data };
         parser.parse_expr()
     }
 
-    fn parse_expr(&mut self) -> Expr {
+    fn parse_expr(&mut self) -> Token {
         assert_eq!(self.advance(), Some('('));
         self.skip_whitespace();
         let mut op = String::new();
@@ -35,19 +42,49 @@ impl Parser {
             op.push(self.advance().unwrap());
         }
         self.skip_whitespace();
-        let mut params = Vec::new();
+        if op == "let*" {
+            Token::LetExpr(self.parse_let_expr())
+        } else {
+            let mut params = Vec::new();
+            while self.peek_is(|c| c != ')') {
+                params.push(self.parse_param());
+                self.skip_whitespace();
+            }
+            let e = Expr::new(op, params);
+            assert_eq!(self.advance(), Some(')'));
+            Token::Expr(e)
+        }
+    }
+
+    fn parse_let_expr(&mut self) -> LetExpr {
+        assert_eq!(self.advance(), Some('('));
+        self.skip_whitespace();
+        let mut bindings = Vec::new();
         while self.peek_is(|c| c != ')') {
-            params.push(self.parse_param());
+            assert_eq!(self.advance(), Some('('));
+            let mut name = String::new();
+            while self.peek_is(|c| !c.is_whitespace()) {
+                name.push(self.advance().unwrap());
+            }
+            self.skip_whitespace();
+            let e = self.parse_param();
+            bindings.push((name, e));
+            assert_eq!(self.advance(), Some(')'));
             self.skip_whitespace();
         }
-        let e = Expr::new(op, params);
         assert_eq!(self.advance(), Some(')'));
-        e
+        self.skip_whitespace();
+        let body = self.parse_param();
+        assert_eq!(self.advance(), Some(')'));
+        LetExpr {
+            bindings,
+            body: Box::new(body),
+        }
     }
 
     fn parse_param(&mut self) -> Token {
         if self.peek_is(|c| c == '(') {
-            Token::Expr(self.parse_expr())
+            self.parse_expr()
         } else {
             let mut param = String::new();
             while self.peek_is(|c| !c.is_whitespace() && c != ')') {
@@ -74,5 +111,28 @@ impl Parser {
         while self.peek_is(char::is_whitespace) {
             self.advance();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn let_expr() {
+        let rkt = String::from("(let* ((x 5) (y 4)) (+ x y))");
+        assert_eq!(
+            Parser::parse(rkt),
+            Token::LetExpr(LetExpr {
+                bindings: vec![
+                    ("x".into(), Token::Const("5".into())),
+                    ("y".into(), Token::Const("4".into()))
+                ],
+                body: Box::new(Token::Expr(Expr {
+                    op: "+".into(),
+                    params: vec![Token::Const("x".into()), Token::Const("y".into())]
+                }))
+            })
+        );
     }
 }

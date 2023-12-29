@@ -4,7 +4,12 @@ The R stands for both Rust and Racket because I am a wordsmith at heart.
 
 ## Usage
 
-blah blah blah
+The compiler binary is called `compiler_bin`. Locally, it is run with
+```sh
+cargo run --bin compiler_bin -- [FILE_NAME]
+```
+This creates the executable file `a.out` in the current directory, which is run
+with `./a.out`.
 
 ## Tests
 
@@ -14,18 +19,10 @@ To run tests, use the command
 cargo test
 ```
 
-It will create two files in `target/tests`: an assembly file `a.asm` that
-contains test functions at labels `f0`..`fn` and a  C file `test.c` that calls
-the functions and checks their results. It then links the files and runs the
-binary.
-
-## TODO
-
-- [ ] Floating point numbers (do we have some sort of box datatype that points to the data or so we represent all numbers as floats?)
-- [ ] Lists
-- [ ] Local variables
-- [ ] Global variables
-- [ ] Functions
+Each test will create two files in `target/tests`: an assembly file
+`[TESTNAME].asm` that contains test functions at labels `f0`..`fn` and a  C
+file `[TESTNAME].c` that calls the functions and checks their results. It
+then links the files and runs the binary.
 
 ## x86_64 Assembly Language
 
@@ -48,3 +45,11 @@ Floating point values are returned in XMM0 and XMM1.
 RBX, RSP, RBP, and R12–R15 are left untouched by the callee.
 
 For leaf functions, local variables are stored in the 128-byte red zone beneath the stack pointer. Non-leaf functions adjust the stack pointer and use RBP as normal.
+
+## TODO
+
+- [ ] Floating point numbers (do we have some sort of box datatype that points to the data or so we represent all numbers as floats?)
+- [x] Lists
+- [x] Local variables
+- [ ] Global variables
+- [ ] Functions
