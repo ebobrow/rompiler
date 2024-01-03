@@ -57,7 +57,7 @@ impl Parser {
     fn parse_let_expr(&mut self) -> LetExpr {
         self.consume_open();
         let mut bindings = Vec::new();
-        while self.peek_is(|c| c != &Token::RightParen) {
+        while self.peek_is(|c| c != &Token::RightParen && c != &Token::RightBracket) {
             self.consume_open();
             let name = self.consume_ident().clone().inner_ident();
             let e = self.parse_param();

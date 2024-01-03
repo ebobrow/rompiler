@@ -31,7 +31,7 @@ All data is boxed on the heap (using C `malloc`) and takes exactly 9 bytes
 bytes are the data.
 
 | First Byte | Type  |
-+------------+-------+
+|------------|-------|
 | 00         | int   |
 | 01         | float |
 
@@ -69,3 +69,4 @@ For leaf functions, local variables are stored in the 128-byte red zone beneath 
 - [ ] Global variables
 - [ ] Functions
 - [ ] Garbage collection?
+- [ ] Conditionals

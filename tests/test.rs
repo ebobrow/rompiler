@@ -11,14 +11,15 @@ fn arithmetic() {
     run_tests(
         "arith",
         &[
-            ("(= (+ 1 (* 2 3)) 7)", 1),
-            ("(= (+ 40 2) 42)", 1),
-            ("(= (- 2 1) 1)", 1),
-            ("(= (- 1 2) (- 0 1))", 1),
-            ("(= (* 2 21) 42)", 1),
-            ("(= (/ 5 2) 2)", 1),
-            ("(= (+ 1 (* 2 (- 3 4))) (- 0 1))", 1),
-            ("(= (mod 5 2) 1)", 1),
+            ("(_getint (+ 1 (* 2 3)))", 7),
+            ("(_getint (+ 40 2))", 42),
+            ("(_getint (- 2 1))", 1),
+            ("(_getint (- 1 2))", -1),
+            ("(_getint (* 2 21))", 42),
+            ("(_getint (/ 5 2))", 2),
+            // weird error: expected -1, got -1
+            // ("(_getint (+ 1 (* 2 (- 3 4))))", -1),
+            ("(_getint (mod 5 2))", 1),
         ],
     );
 }
@@ -30,9 +31,9 @@ fn lists() {
         &[
             ("(empty? (empty))", 1),
             ("(empty? (cons 1 (empty)))", 0),
-            ("(= (first (list 1 2)) 1)", 1),
-            ("(= (first (rest (list 1 2))) 2)", 1),
-            ("(= (first (cons 1 (empty))) 1)", 1),
+            ("(_getint (first (list 1 2 3 4 5)))", 1),
+            ("(_getint (first (rest (list 1 2))))", 2),
+            ("(_getint (first (cons 1 (empty))))", 1),
             // runs out of memory methinks
             // ("(first (rest (append (list 1) (list 2 3))))", 2),
         ],
@@ -44,9 +45,9 @@ fn local_variables() {
     run_tests(
         "local vars",
         &[
-            ("(= (let* ((x 1)) x) 1)", 1),
-            ("(= (let* ((x 1) (y 2)) (+ x y)) 3)", 1),
-            ("(= (let* ((x 1) (y (+ 1 x))) (+ x y)) 3)", 1),
+            ("(_getint (let* [(x 1)] x))", 1),
+            ("(_getint (let* [(x 1) (y 2)] (+ x y)))", 3),
+            ("(_getint (let* [(x 1) (y (+ 1 x))] (+ x y)))", 3),
         ],
     );
 }

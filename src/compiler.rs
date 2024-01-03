@@ -94,6 +94,7 @@ impl Compiler {
         self.compile_tok(&t, Some(Reg::RAX));
         assert_eq!(self.preserve.len(), 0);
         assert_eq!(self.bindings.len(), 0);
+        assert_eq!(self.rsp_parity, 0);
         (self.consts, self.lines)
     }
 
@@ -149,6 +150,9 @@ impl Compiler {
                     self.call_two_param(f, &e.params[0], &e.params[1])
                 }
                 "list" => self.call_on_stack("list", &e.params[..]),
+
+                // Internals
+                f @ ("_getint" | "_getfloat") => self.call_one_param(&f[1..], &e.params[0]),
 
                 _ => unimplemented!(),
             },
@@ -224,7 +228,6 @@ impl Compiler {
             self.rsp_parity += 1;
             self.preserve.remove(&Reg::RAX);
         }
-        // self.preserve.insert(Reg::RAX);
 
         let r1 = self.compile_tok(p1, None);
         self.preserve.insert(r1);
@@ -310,16 +313,6 @@ impl Compiler {
 
         self.l(format!("add rsp, {}", (self.rsp_parity - orig_parity) * 8));
         self.rsp_parity = orig_parity;
-        // for _ in params {
-        //     let reg = self.next_reg();
-        //     self.l(format!("pop {reg:?}"));
-        //     self.rsp_parity -= 1;
-        // }
-
-        // if stack_misaligned {
-        //     self.l("add rsp, 8");
-        //     self.rsp_parity -= 1;
-        // }
         Reg::RAX
     }
 
