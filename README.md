@@ -53,3 +53,4 @@ For leaf functions, local variables are stored in the 128-byte red zone beneath 
 - [x] Local variables
 - [ ] Global variables
 - [ ] Functions
+- [ ] Garbage collection?

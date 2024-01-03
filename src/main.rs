@@ -12,7 +12,7 @@ fn main() {
     let file_path = &args[1];
     let contents = fs::read_to_string(file_path).unwrap();
     let e = Parser::parse(Lexer::lex(contents));
-    let lines = Compiler::compile(e);
+    let (consts, lines) = Compiler::new().compile(e);
 
     let mut file = File::create("a.asm").unwrap();
     file.write_all(b"global main\n").unwrap();
@@ -43,6 +43,12 @@ ret
 "#,
     )
     .unwrap();
+
+    file.write_all(b"section .data\n").unwrap();
+    for (name, val) in consts {
+        file.write_all(format!("{name}: dd {val:?}\n").as_bytes())
+            .unwrap();
+    }
 
     for stdlib in fs::read_dir("src/stdlib").unwrap() {
         file.write_all(

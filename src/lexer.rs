@@ -7,6 +7,7 @@ pub enum Token {
     Identifier(String),
     Integer(i64),
     Float(f64),
+    EOF,
 }
 
 impl Token {
@@ -35,7 +36,6 @@ impl Lexer {
 
         while lexer.ptr < lexer.src.len() {
             let token = lexer.scan_token();
-            println!("{token:?}");
             lexer.tokens.push(token);
         }
 
@@ -43,12 +43,15 @@ impl Lexer {
     }
 
     fn scan_token(&mut self) -> Token {
+        if self.ptr == self.src.len() {
+            return Token::EOF;
+        }
         match self.advance() {
             '(' => Token::LeftParen,
             ')' => Token::RightParen,
             '[' => Token::LeftBracket,
             ']' => Token::RightBracket,
-            ' ' => self.scan_token(),
+            ' ' | '\n' => self.scan_token(),
             c => {
                 if c.is_numeric() {
                     self.number()

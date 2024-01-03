@@ -1,11 +1,4 @@
-global empty
-global cons
-global isempty
-global first
-global rest
-global list
-global append
-
+section .text
 ; Empty
 ;   Takes no arguments; returns an empty list
 ;   Only modifies rax

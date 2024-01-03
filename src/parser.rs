@@ -39,7 +39,7 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Node {
-        assert_eq!(self.advance(), &Token::LeftParen);
+        self.consume_open();
         let op = self.consume_ident().clone().inner_ident();
         if op == "let*" {
             Node::LetExpr(self.parse_let_expr())
@@ -49,24 +49,24 @@ impl Parser {
                 params.push(self.parse_param());
             }
             let e = Expr::new(op, params);
-            assert_eq!(self.advance(), &Token::RightParen);
+            self.consume_close();
             Node::Expr(e)
         }
     }
 
     fn parse_let_expr(&mut self) -> LetExpr {
-        assert_eq!(self.advance(), &Token::LeftParen);
+        self.consume_open();
         let mut bindings = Vec::new();
         while self.peek_is(|c| c != &Token::RightParen) {
-            assert_eq!(self.advance(), &Token::LeftParen);
+            self.consume_open();
             let name = self.consume_ident().clone().inner_ident();
             let e = self.parse_param();
             bindings.push((name, e));
-            assert_eq!(self.advance(), &Token::RightParen);
+            self.consume_close();
         }
-        assert_eq!(self.advance(), &Token::RightParen);
+        self.consume_close();
         let body = self.parse_param();
-        assert_eq!(self.advance(), &Token::RightParen);
+        self.consume_close();
         LetExpr {
             bindings,
             body: Box::new(body),
@@ -97,6 +97,20 @@ impl Parser {
     fn advance(&mut self) -> &Token {
         self.ptr += 1;
         &self.data[self.ptr - 1]
+    }
+
+    fn consume_open(&mut self) {
+        assert!(matches!(
+            self.advance(),
+            Token::LeftParen | Token::LeftBracket
+        ));
+    }
+
+    fn consume_close(&mut self) {
+        assert!(matches!(
+            self.advance(),
+            Token::RightParen | Token::RightBracket
+        ));
     }
 
     fn consume_ident(&mut self) -> &Token {

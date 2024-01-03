@@ -21,39 +21,6 @@ enum Reg {
     R15,
 }
 
-// type Reg = usize;
-
-// fn reg_to_string(r: Reg) -> String {
-//     match r {
-//         1 => "RAX",
-//         2 => "RBX",
-//         3 => "RCX",
-//         4 => "RDX",
-//         5 => "RBP",
-//         6 => "RSI",
-
-//     }
-// }
-// struct Reg {
-//     n: usize,
-//     bits: usize,
-// }
-
-// impl ToString for Reg {
-//     fn to_string(&self) -> String {
-//         match self.n {
-//             1 =>
-//             _ => match self.bits {
-//                 64 => format!("r{}", self.n),
-//                 32 => format!("r{}D", self.n),
-//                 16 => format!("r{}W", self.n),
-//                 8 => format!("r{}B", self.n),
-//                 _ => unreachable!(),
-//             },
-//         }
-//     }
-// }
-
 fn assert_params(e: &Expr, n: usize) {
     assert_eq!(e.params.len(), n);
 }
@@ -62,6 +29,7 @@ pub struct Compiler {
     lines: Vec<String>,
     preserve: HashSet<Reg>,
     bindings: HashMap<String, Reg>,
+    consts: Vec<(String, f64)>,
 
     /// Number of pushes to stack. If even, pointer will not be aligned after making a call and a
     /// push must be made
@@ -72,17 +40,18 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             lines: Vec::new(),
             preserve: HashSet::new(),
             bindings: HashMap::new(),
+            consts: Vec::new(),
             rsp_parity: 0,
             usable_regs: HashSet::from([
                 // Reg::RAX,
                 Reg::RBX,
                 Reg::RCX,
-                // Reg::RDX,
+                Reg::RDX,
                 // Reg::RBP,
                 // Reg::RSI,
                 // Reg::RDI,
@@ -98,12 +67,38 @@ impl Compiler {
         }
     }
 
-    pub fn compile(t: Node) -> Vec<String> {
-        let mut compiler = Compiler::new();
-        compiler.compile_tok(&t, Some(Reg::RAX));
-        assert_eq!(compiler.preserve.len(), 0);
-        assert_eq!(compiler.bindings.len(), 0);
-        compiler.lines
+    pub fn with_consts(consts: Vec<(String, f64)>) -> Self {
+        Self {
+            lines: Vec::new(),
+            preserve: HashSet::new(),
+            bindings: HashMap::new(),
+            consts,
+            rsp_parity: 0,
+            usable_regs: HashSet::from([
+                // Reg::RAX,
+                Reg::RBX,
+                Reg::RCX,
+                Reg::RDX,
+                // Reg::RBP,
+                // Reg::RSI,
+                // Reg::RDI,
+                Reg::R8,
+                Reg::R9,
+                Reg::R10,
+                Reg::R11,
+                Reg::R12,
+                Reg::R13,
+                Reg::R14,
+                Reg::R15,
+            ]),
+        }
+    }
+
+    pub fn compile(mut self, t: Node) -> (Vec<(String, f64)>, Vec<String>) {
+        self.compile_tok(&t, Some(Reg::RAX));
+        assert_eq!(self.preserve.len(), 0);
+        assert_eq!(self.bindings.len(), 0);
+        (self.consts, self.lines)
     }
 
     fn l(&mut self, line: impl ToString) {
@@ -117,26 +112,27 @@ impl Compiler {
                 "+" => {
                     // TODO: can add an arbitrary amount of numbers
                     assert_params(e, 2);
-                    self.binop("add", &e.params[0], &e.params[1], target)
+                    self.arith("madd", &e.params[0], &e.params[1])
                 }
                 "-" => {
                     assert_params(e, 2);
-                    self.binop("sub", &e.params[0], &e.params[1], target)
+                    self.arith("msub", &e.params[0], &e.params[1])
                 }
                 "*" => {
                     assert_params(e, 2);
-                    self.binop_in_reg("imul", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
+                    self.arith("mmul", &e.params[0], &e.params[1])
                 }
                 "/" => {
                     assert_params(e, 2);
-                    // self.preserve.insert(Reg::RDX); // remainder is stored in rdx
-                    // self.binop_in_reg("idiv", Reg::RAX, Reg::RAX, &e.params[0], &e.params[1])
-                    self.div(Reg::RAX, &e.params[0], &e.params[1])
+                    self.arith("mdiv", &e.params[0], &e.params[1])
                 }
                 "mod" => {
                     assert_params(e, 2);
-                    // self.binop_in_reg("idiv", Reg::RAX, Reg::RDX, &e.params[0], &e.params[1])
-                    self.div(Reg::RDX, &e.params[0], &e.params[1])
+                    self.arith("mmod", &e.params[0], &e.params[1])
+                }
+                "=" => {
+                    assert_params(e, 2);
+                    self.arith("eq", &e.params[0], &e.params[1])
                 }
 
                 // List operations
@@ -180,7 +176,7 @@ impl Compiler {
                     "#t" => 1,
                     "#f" => 0,
                     _ => {
-                        let reg = self.bindings.get(s).unwrap().clone();
+                        let reg = *self.bindings.get(s).unwrap();
                         if let Some(target) = target {
                             self.l(format!("mov {target:?}, {reg:?}"));
                         }
@@ -192,12 +188,19 @@ impl Compiler {
                 out
             }
             Node::Float(f) => {
-                todo!()
+                let name = if let Some((name, _)) = self.consts.iter().find(|(_, val)| val == f) {
+                    name.clone()
+                } else {
+                    let name = self.next_var_name();
+                    self.consts.push((name.clone(), *f));
+                    name
+                };
+                self.l(format!("movss XMM0, [{name}]"));
+                self.call_function("newfloat")
             }
             Node::Integer(i) => {
-                let out = target.unwrap_or_else(|| self.next_reg());
-                self.l(format!("mov {out:?}, {i}"));
-                out
+                self.l(format!("mov RDI, {i}"));
+                self.call_function("newint")
             }
             _ => unreachable!(),
         }
@@ -218,83 +221,37 @@ impl Compiler {
         out
     }
 
-    fn binop(&mut self, op: &str, p1: &Node, p2: &Node, target: Option<Reg>) -> Reg {
-        let out = self.compile_tok(p1, target);
-        self.preserve.insert(out);
-
-        let reg2 = self.compile_tok(p2, None);
-
-        self.l(format!("{op} {out:?}, {reg2:?}"));
-        self.preserve.remove(&out);
-        out
-    }
-
-    fn binop_in_reg(&mut self, op: &str, reg1: Reg, target: Reg, p1: &Node, p2: &Node) -> Reg {
-        let save_reg = self.preserve.contains(&reg1);
-        if save_reg {
-            self.l(format!("push {reg1:?}"));
-        }
-
-        self.compile_tok(p1, Some(reg1));
-        self.preserve.insert(reg1);
-        self.preserve.insert(target); // not strictly necessary but it simplifies things
-
-        let reg2 = self.compile_tok(p2, None);
-
-        self.l(format!("{op} {reg2:?}"));
-        self.preserve.remove(&reg1);
-
-        if save_reg {
-            if reg1 == target {
-                self.l(format!("mov {reg2:?}, {reg1:?}"));
-                self.l(format!("pop {reg1:?}"));
-                return reg2;
-            }
-            self.l(format!("pop {reg1:?}"));
-        }
-        target
-    }
-
-    fn div(&mut self, out: Reg, p1: &Node, p2: &Node) -> Reg {
+    fn arith(&mut self, op: &str, p1: &Node, p2: &Node) -> Reg {
         // RAX must contain the dividend
         let save_rax = self.preserve.contains(&Reg::RAX);
         if save_rax {
             self.l("push rax");
+            self.rsp_parity += 1;
         }
         self.preserve.insert(Reg::RAX);
-        // RDX must be empty
-        let save_rdx = self.preserve.contains(&Reg::RDX);
-        if save_rdx {
-            self.l("push rdx");
-        }
-        self.l("xor rdx, rdx");
-        self.preserve.insert(Reg::RDX);
 
-        self.compile_tok(p1, Some(Reg::RAX));
-        let reg2 = self.compile_tok(p2, None);
-        self.l(format!("idiv {reg2:?}"));
+        let r1 = self.compile_tok(p1, None);
+        self.preserve.insert(r1);
+        let r2 = self.compile_tok(p2, None);
+        self.l(format!("mov rdi, {r1:?}"));
+        self.l(format!("mov rsi, {r2:?}"));
+        let out = self.call_function(op);
 
-        let mut actual_out = out;
-        if save_rdx {
-            if out == Reg::RDX {
-                actual_out = self.next_reg();
-                self.l(format!("move {actual_out:?}, rdx"));
-            }
-            self.l("pop rdx");
-        }
         if save_rax {
-            if out == Reg::RAX {
-                actual_out = self.next_reg();
-                self.l(format!("move {actual_out:?}, rax"));
-            }
             self.l("pop rax");
+            self.rsp_parity -= 1;
+        } else {
+            self.preserve.remove(&Reg::RAX);
         }
-        self.preserve.remove(&Reg::RAX);
-        self.preserve.remove(&Reg::RDX);
-        actual_out
+        self.preserve.remove(&r1);
+        out
     }
 
     fn call_function(&mut self, name: &str) -> Reg {
+        if self.preserve.contains(&Reg::RAX) {
+            self.l("push rax");
+            self.rsp_parity += 1;
+        }
         if self.rsp_parity % 2 == 0 {
             self.l("sub rsp, 8");
         }
@@ -303,6 +260,13 @@ impl Compiler {
 
         if self.rsp_parity % 2 == 0 {
             self.l("add rsp, 8");
+        }
+        if self.preserve.contains(&Reg::RAX) {
+            let out = self.next_reg();
+            self.l(format!("mov {out:?}, rax"));
+            self.l("pop rax");
+            self.rsp_parity -= 1;
+            return out;
         }
         Reg::RAX
     }
@@ -351,5 +315,26 @@ impl Compiler {
 
     fn next_reg(&self) -> Reg {
         *self.usable_regs.difference(&self.preserve).next().unwrap()
+    }
+
+    fn next_var_name(&self) -> String {
+        if let Some((name, _)) = self.consts.last() {
+            if name.chars().last().unwrap() == 'z' {
+                format!("{name}a")
+            } else {
+                name.chars()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i == name.len() - 1 {
+                            ((c as u8) + 1).into()
+                        } else {
+                            c
+                        }
+                    })
+                    .collect()
+            }
+        } else {
+            String::from("a")
+        }
     }
 }

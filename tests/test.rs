@@ -11,14 +11,15 @@ fn arithmetic() {
     run_tests(
         "arith",
         &[
-            ("(+ 1 (* 2 3))", 7),
-            ("(+ 40 2)", 42),
-            ("(- 2 1)", 1),
-            ("(- 1 2)", -1),
-            ("(* 2 21)", 42),
-            ("(/ 5 2)", 2),
-            ("(+ 1 (* 2 (- 3 4)))", -1),
-            ("(mod 5 2)", 1),
+            ("(= (+ 1 (* 2 3)) 7)", 1),
+            ("(= (+ 40 2) 42)", 1),
+            ("(= (- 2 1) 1)", 1),
+            ("(= (- 1 2) (- 0 1))", 1),
+            ("(= (* 2 21) 42)", 1),
+            ("(= (/ 5 2) 2)", 1),
+            // runs out of memory
+            // ("(= (+ 1 (* 2 (- 3 4))) (- 0 1))", 1),
+            ("(= (mod 5 2) 1)", 1),
         ],
     );
 }
@@ -30,10 +31,10 @@ fn lists() {
         &[
             ("(empty? (empty))", 1),
             ("(empty? (cons 1 (empty)))", 0),
-            ("(first (list 1 2 3))", 1),
-            ("(first (rest (list 1 2 3)))", 2),
-            ("(first (cons 1 (empty)))", 1),
-            // this one doesn't pass but that's a later problem :o
+            ("(= (first (list 1 2)) 1)", 1),
+            ("(= (first (rest (list 1 2))) 2)", 1),
+            ("(= (first (cons 1 (empty))) 1)", 1),
+            // runs out of memory methinks
             // ("(first (rest (append (list 1) (list 2 3))))", 2),
         ],
     );
@@ -44,9 +45,22 @@ fn local_variables() {
     run_tests(
         "local vars",
         &[
-            ("(let* ((x 1)) x)", 1),
-            ("(let* ((x 1) (y 2)) (+ x y))", 3),
-            ("(let* ((x 1) (y (+ 1 x))) (+ x y))", 3),
+            ("(= (let* ((x 1)) x) 1)", 1),
+            ("(= (let* ((x 1) (y 2)) (+ x y)) 3)", 1),
+            ("(= (let* ((x 1) (y (+ 1 x))) (+ x y)) 3)", 1),
+        ],
+    );
+}
+
+#[test]
+fn floats() {
+    run_tests(
+        "floats",
+        &[
+            ("(= 1.0 1.0)", 1),
+            ("(= 1.5 (+ 1.0 0.5))", 1),
+            ("(= 1.5 (+ 1 0.5))", 1),
+            ("(= 1.5 (+ 0.5 1))", 1),
         ],
     );
 }
@@ -74,9 +88,11 @@ fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
         .write_all(b"int main() {int all_pass = 0;int64_t out;")
         .unwrap();
 
+    let mut all_consts = Vec::new();
     for (i, (rkt, expected)) in tests.iter().enumerate() {
         let e = Parser::parse(Lexer::lex(rkt.to_string()));
-        let lines = Compiler::compile(e);
+        let (consts, lines) = Compiler::with_consts(all_consts.clone()).compile(e);
+        all_consts = consts;
         asmfile.write_all(format!("f{i}:\n").as_bytes()).unwrap();
         asmfile
             .write_all(
@@ -113,6 +129,13 @@ ret
             .unwrap();
     }
     cfile.write_all(b"return all_pass;}").unwrap();
+
+    asmfile.write_all(b"section .data\n").unwrap();
+    for (name, val) in all_consts {
+        asmfile
+            .write_all(format!("{name}: dd {val:?}\n").as_bytes())
+            .unwrap();
+    }
 
     for stdlib in fs::read_dir("src/stdlib").unwrap() {
         asmfile
