@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::parser::{Expr, LetExpr, Node};
 
+use lazy_static::lazy_static;
+
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 enum Reg {
     RAX,
@@ -21,6 +23,37 @@ enum Reg {
     R15,
 }
 
+lazy_static! {
+    static ref USABLE_REGS: HashSet<Reg> = {
+        let mut s = HashSet::new();
+        s.insert(Reg::RBX);
+        s.insert(Reg::RCX);
+        s.insert(Reg::RDX);
+        s.insert(Reg::R8);
+        s.insert(Reg::R9);
+        s.insert(Reg::R10);
+        s.insert(Reg::R11);
+        s.insert(Reg::R12);
+        s.insert(Reg::R13);
+        s.insert(Reg::R14);
+        s.insert(Reg::R15);
+        s
+    };
+    static ref CALLER_SAVED_REGS: HashSet<Reg> = {
+        let mut s = HashSet::new();
+        s.insert(Reg::RAX);
+        s.insert(Reg::RCX);
+        s.insert(Reg::RDX);
+        s.insert(Reg::RSI);
+        s.insert(Reg::RDI);
+        s.insert(Reg::R8);
+        s.insert(Reg::R9);
+        s.insert(Reg::R10);
+        s.insert(Reg::R11);
+        s
+    };
+}
+
 fn assert_params(e: &Expr, n: usize) {
     assert_eq!(e.params.len(), n);
 }
@@ -34,9 +67,6 @@ pub struct Compiler {
     /// Number of pushes to stack. If even, pointer will not be aligned after making a call and a
     /// push must be made
     rsp_parity: usize,
-
-    /// Convenience variable, should be a constant
-    usable_regs: HashSet<Reg>,
 }
 
 impl Compiler {
@@ -47,23 +77,6 @@ impl Compiler {
             bindings: HashMap::new(),
             consts: Vec::new(),
             rsp_parity: 0,
-            usable_regs: HashSet::from([
-                // Reg::RAX,
-                Reg::RBX,
-                Reg::RCX,
-                Reg::RDX,
-                // Reg::RBP,
-                // Reg::RSI,
-                // Reg::RDI,
-                Reg::R8,
-                Reg::R9,
-                Reg::R10,
-                Reg::R11,
-                Reg::R12,
-                Reg::R13,
-                Reg::R14,
-                Reg::R15,
-            ]),
         }
     }
 
@@ -74,23 +87,6 @@ impl Compiler {
             bindings: HashMap::new(),
             consts,
             rsp_parity: 0,
-            usable_regs: HashSet::from([
-                // Reg::RAX,
-                Reg::RBX,
-                Reg::RCX,
-                Reg::RDX,
-                // Reg::RBP,
-                // Reg::RSI,
-                // Reg::RDI,
-                Reg::R8,
-                Reg::R9,
-                Reg::R10,
-                Reg::R11,
-                Reg::R12,
-                Reg::R13,
-                Reg::R14,
-                Reg::R15,
-            ]),
         }
     }
 
@@ -222,35 +218,41 @@ impl Compiler {
     }
 
     fn arith(&mut self, op: &str, p1: &Node, p2: &Node) -> Reg {
-        // RAX must contain the dividend
         let save_rax = self.preserve.contains(&Reg::RAX);
         if save_rax {
             self.l("push rax");
             self.rsp_parity += 1;
+            self.preserve.remove(&Reg::RAX);
         }
-        self.preserve.insert(Reg::RAX);
+        // self.preserve.insert(Reg::RAX);
 
         let r1 = self.compile_tok(p1, None);
         self.preserve.insert(r1);
         let r2 = self.compile_tok(p2, None);
+        self.preserve.remove(&r1);
         self.l(format!("mov rdi, {r1:?}"));
         self.l(format!("mov rsi, {r2:?}"));
-        let out = self.call_function(op);
+        let mut out = self.call_function(op);
 
         if save_rax {
+            out = self.next_reg();
+            self.l(format!("mov {out:?}, RAX"));
             self.l("pop rax");
             self.rsp_parity -= 1;
-        } else {
-            self.preserve.remove(&Reg::RAX);
+            self.preserve.insert(Reg::RAX);
         }
-        self.preserve.remove(&r1);
         out
     }
 
     fn call_function(&mut self, name: &str) -> Reg {
-        if self.preserve.contains(&Reg::RAX) {
-            self.l("push rax");
+        let mut saved_regs = Vec::new();
+        for reg in self.preserve.intersection(&CALLER_SAVED_REGS) {
+            saved_regs.push(*reg);
+        }
+        for reg in &saved_regs {
+            self.l(format!("push {reg:?}"));
             self.rsp_parity += 1;
+            self.preserve.remove(reg);
         }
         if self.rsp_parity % 2 == 0 {
             self.l("sub rsp, 8");
@@ -261,14 +263,17 @@ impl Compiler {
         if self.rsp_parity % 2 == 0 {
             self.l("add rsp, 8");
         }
-        if self.preserve.contains(&Reg::RAX) {
-            let out = self.next_reg();
-            self.l(format!("mov {out:?}, rax"));
-            self.l("pop rax");
+        let mut out = Reg::RAX;
+        for reg in saved_regs {
+            if reg == Reg::RAX {
+                out = self.next_reg();
+                self.l(format!("mov {out:?}, rax"));
+            }
+            self.l(format!("pop {reg:?}"));
+            self.preserve.insert(reg);
             self.rsp_parity -= 1;
-            return out;
         }
-        Reg::RAX
+        out
     }
 
     fn call_one_param(&mut self, name: &str, p1: &Node) -> Reg {
@@ -287,9 +292,11 @@ impl Compiler {
     }
 
     fn call_on_stack(&mut self, name: &str, params: &[Node]) -> Reg {
+        let orig_parity = self.rsp_parity;
         let stack_misaligned = (self.rsp_parity + params.len()) % 2 == 0;
         if stack_misaligned {
             self.l("sub rsp, 8");
+            self.rsp_parity += 1;
         }
 
         for param in params.iter().rev() {
@@ -301,20 +308,23 @@ impl Compiler {
         self.l(format!("mov rdi, {}", params.len()));
         self.l(format!("call {name}"));
 
-        for _ in params {
-            let reg = self.next_reg();
-            self.l(format!("pop {reg:?}"));
-            self.rsp_parity -= 1;
-        }
+        self.l(format!("add rsp, {}", (self.rsp_parity - orig_parity) * 8));
+        self.rsp_parity = orig_parity;
+        // for _ in params {
+        //     let reg = self.next_reg();
+        //     self.l(format!("pop {reg:?}"));
+        //     self.rsp_parity -= 1;
+        // }
 
-        if stack_misaligned {
-            self.l("add rsp, 8");
-        }
+        // if stack_misaligned {
+        //     self.l("add rsp, 8");
+        //     self.rsp_parity -= 1;
+        // }
         Reg::RAX
     }
 
     fn next_reg(&self) -> Reg {
-        *self.usable_regs.difference(&self.preserve).next().unwrap()
+        *USABLE_REGS.difference(&self.preserve).next().unwrap()
     }
 
     fn next_var_name(&self) -> String {

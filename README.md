@@ -24,6 +24,21 @@ Each test will create two files in `target/tests`: an assembly file
 file `[TESTNAME].c` that calls the functions and checks their results. It
 then links the files and runs the binary.
 
+## Data Storage
+
+All data is boxed on the heap (using C `malloc`) and takes exactly 9 bytes
+(subject to change, doubles maybe). The first byte is the type. The next 8
+bytes are the data.
+
+| First Byte | Type  |
++------------+-------+
+| 00         | int   |
+| 01         | float |
+
+Lists are stored as linked lists. The first 8 bytes of the cons cell are the
+adress of the boxed data. The last 8 bytes are the address of the next cons
+cell, or 0 for the last item
+
 ## x86_64 Assembly Language
 
 blah blah blah
@@ -48,7 +63,7 @@ For leaf functions, local variables are stored in the 128-byte red zone beneath 
 
 ## TODO
 
-- [ ] Floating point numbers (do we have some sort of box datatype that points to the data or so we represent all numbers as floats?)
+- [x] Floating point numbers (do we have some sort of box datatype that points to the data or so we represent all numbers as floats?)
 - [x] Lists
 - [x] Local variables
 - [ ] Global variables

@@ -12,3 +12,4 @@ name = "compiler_bin"
 path = "src/main.rs"
 
 [dependencies]
+lazy_static = "1.4.0"

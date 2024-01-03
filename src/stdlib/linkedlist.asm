@@ -1,3 +1,5 @@
+extern malloc
+
 section .text
 ; Empty
 ;   Takes no arguments; returns an empty list
@@ -10,11 +12,17 @@ empty:
 ;   Arguments: `first` in rdi, `rest` in rsi
 ;   Returns list in rax
 cons:
-    mov     rax,   rbp    ; store heap address in rax to return
-    mov     [rbp], rdi    ; store `first` on the heap
-    sub     rbp,   8
-    mov     [rbp], rsi    ; store `rest` on the heap
-    sub     rbp,   8
+    push    rbx
+    push    rsi
+    push    rsi             ; extra push to align stack pointer
+    mov     rbx,     rdi
+    mov     rdi,     16
+    call    malloc
+    pop     rsi
+    pop     rsi
+    mov     [rax],   rbx    ; store `first` on the heap
+    mov     [rax-8], rsi    ; store `rest` on the heap
+    pop     rbx
     ret
 
 ; IsEmpty
@@ -39,8 +47,7 @@ first:
 ;   Arguments: list in rdi
 ;   Returns: the rest of the list in rax
 rest:
-    sub     rdi, 8
-    mov     rax, [rdi]
+    mov     rax, [rdi-8]
     ret
 
 ; List

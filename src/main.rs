@@ -23,26 +23,12 @@ fn main() {
     .unwrap();
 
     // custom heap (there's gotta be a better way)
-    file.write_all(
-        br#"main:
-push rbp
-mov rbp, rsp
-sub rbp, 8
-sub rsp, 88
-"#,
-    )
-    .unwrap();
+    file.write_all(b"main:\n").unwrap();
     for line in lines {
         file.write_all(line.as_bytes()).unwrap();
         file.write_all(b"\n").unwrap();
     }
-    file.write_all(
-        br#"add rsp, 88
-pop rbp
-ret
-"#,
-    )
-    .unwrap();
+    file.write_all(b"ret\n").unwrap();
 
     file.write_all(b"section .data\n").unwrap();
     for (name, val) in consts {

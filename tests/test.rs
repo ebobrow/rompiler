@@ -17,8 +17,7 @@ fn arithmetic() {
             ("(= (- 1 2) (- 0 1))", 1),
             ("(= (* 2 21) 42)", 1),
             ("(= (/ 5 2) 2)", 1),
-            // runs out of memory
-            // ("(= (+ 1 (* 2 (- 3 4))) (- 0 1))", 1),
+            ("(= (+ 1 (* 2 (- 3 4))) (- 0 1))", 1),
             ("(= (mod 5 2) 1)", 1),
         ],
     );
@@ -94,27 +93,11 @@ fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
         let (consts, lines) = Compiler::with_consts(all_consts.clone()).compile(e);
         all_consts = consts;
         asmfile.write_all(format!("f{i}:\n").as_bytes()).unwrap();
-        asmfile
-            .write_all(
-                br#"push rbp
-mov rbp, rsp
-sub rbp, 8
-sub rsp, 88
-"#,
-            )
-            .unwrap();
         for line in lines {
             asmfile.write_all(line.as_bytes()).unwrap();
             asmfile.write_all(b"\n").unwrap();
         }
-        asmfile
-            .write_all(
-                br#"add rsp, 88
-pop rbp
-ret
-"#,
-            )
-            .unwrap();
+        asmfile.write_all(b"ret\n").unwrap();
 
         cfile.write_all(format!("out=f{i}();").as_bytes()).unwrap();
         cfile
