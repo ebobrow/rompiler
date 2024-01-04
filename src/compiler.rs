@@ -154,6 +154,9 @@ impl Compiler {
                 // Internals
                 f @ ("_getint" | "_getfloat") => self.call_one_param(&f[1..], &e.params[0]),
 
+                // Conditionals
+                "if" => self.compile_if(&e.params[0], &e.params[1], &e.params[2], target),
+
                 _ => unimplemented!(),
             },
             Node::LetExpr(LetExpr { bindings, body }) => self.compile_let_expr(bindings, body),
@@ -191,7 +194,7 @@ impl Compiler {
                 let name = if let Some((name, _)) = self.consts.iter().find(|(_, val)| val == f) {
                     name.clone()
                 } else {
-                    let name = self.next_var_name();
+                    let name = self.next_label_name();
                     self.consts.push((name.clone(), *f));
                     name
                 };
@@ -244,6 +247,26 @@ impl Compiler {
             self.rsp_parity -= 1;
             self.preserve.insert(Reg::RAX);
         }
+        out
+    }
+
+    fn compile_if(&mut self, cond: &Node, p1: &Node, p2: &Node, target: Option<Reg>) -> Reg {
+        let out = self.compile_tok(cond, target);
+        let truelabel = self.next_label_name();
+        self.consts.push((truelabel.clone(), f64::NAN));
+        let falselabel = self.next_label_name();
+        self.consts.push((falselabel.clone(), f64::NAN));
+        let donelabel = self.next_label_name();
+        self.consts.push((donelabel.clone(), f64::NAN));
+        self.l(format!("cmp {out:?}, 1"));
+        self.l(format!("je {truelabel}"));
+        self.l(format!("jmp {falselabel}"));
+        self.l(format!("{truelabel}:"));
+        self.compile_tok(p1, target);
+        self.l(format!("jmp {donelabel}"));
+        self.l(format!("{falselabel}:"));
+        self.compile_tok(p2, target);
+        self.l(format!("{donelabel}:"));
         out
     }
 
@@ -320,7 +343,7 @@ impl Compiler {
         *USABLE_REGS.difference(&self.preserve).next().unwrap()
     }
 
-    fn next_var_name(&self) -> String {
+    fn next_label_name(&self) -> String {
         if let Some((name, _)) = self.consts.last() {
             if name.chars().last().unwrap() == 'z' {
                 format!("{name}a")

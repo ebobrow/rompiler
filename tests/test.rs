@@ -65,6 +65,19 @@ fn floats() {
     );
 }
 
+#[test]
+fn conditionals() {
+    run_tests(
+        "cond",
+        &[
+            ("(_getint (if #t 2 3))", 2),
+            ("(_getint (if #f 2 3))", 3),
+            ("(_getint (if (= 1 1) 2 3))", 2),
+            ("(_getint (+ (if #f 2 3) 1))", 4),
+        ],
+    );
+}
+
 /// Do not touch this function it is awful
 fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
     fs::create_dir_all("target/tests").unwrap();
@@ -116,9 +129,11 @@ fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
 
     asmfile.write_all(b"section .data\n").unwrap();
     for (name, val) in all_consts {
-        asmfile
-            .write_all(format!("{name}: dd {val:?}\n").as_bytes())
-            .unwrap();
+        if !val.is_nan() {
+            asmfile
+                .write_all(format!("{name}: dd {val:?}\n").as_bytes())
+                .unwrap();
+        }
     }
 
     for stdlib in fs::read_dir("src/stdlib").unwrap() {

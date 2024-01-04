@@ -32,8 +32,10 @@ fn main() {
 
     file.write_all(b"section .data\n").unwrap();
     for (name, val) in consts {
-        file.write_all(format!("{name}: dd {val:?}\n").as_bytes())
-            .unwrap();
+        if !val.is_nan() {
+            file.write_all(format!("{name}: dd {val:?}\n").as_bytes())
+                .unwrap();
+        }
     }
 
     for stdlib in fs::read_dir("src/stdlib").unwrap() {
