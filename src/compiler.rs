@@ -251,21 +251,22 @@ impl Compiler {
     }
 
     fn compile_if(&mut self, cond: &Node, p1: &Node, p2: &Node, target: Option<Reg>) -> Reg {
-        let out = self.compile_tok(cond, target);
+        let cond_reg = self.compile_tok(cond, None);
         let truelabel = self.next_label_name();
         self.consts.push((truelabel.clone(), f64::NAN));
         let falselabel = self.next_label_name();
         self.consts.push((falselabel.clone(), f64::NAN));
         let donelabel = self.next_label_name();
         self.consts.push((donelabel.clone(), f64::NAN));
-        self.l(format!("cmp {out:?}, 1"));
+        self.l(format!("cmp {cond_reg:?}, 1"));
         self.l(format!("je {truelabel}"));
         self.l(format!("jmp {falselabel}"));
         self.l(format!("{truelabel}:"));
-        self.compile_tok(p1, target);
+        let out = self.compile_tok(p1, target);
         self.l(format!("jmp {donelabel}"));
         self.l(format!("{falselabel}:"));
-        self.compile_tok(p2, target);
+        let out2 = self.compile_tok(p2, target);
+        assert_eq!(out, out2);
         self.l(format!("{donelabel}:"));
         out
     }
