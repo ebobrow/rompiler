@@ -3,10 +3,7 @@
 ;  ------       ------------
 ; | reg | ---> | ty | data |
 ; ------       ------------
-;
-; Ty:
-;   0 -> int
-;   1 -> float
+
 extern malloc
 
 section .text
@@ -40,6 +37,19 @@ newfloat:
     pop     rbx
     ret
 
+; NewIP
+;   Arguments: line number in rdi
+;   Returns ip in rax
+newip:
+    push    rbx
+    mov     rbx, rdi
+    mov     rdi, 9
+    call    malloc
+    mov     [rax+3], byte 2 ; store type
+    mov     [rax-1], rbx    ; store data
+    pop     rbx
+    ret
+
 ; GetInt
 ;   Arguments: boxed int in rdi
 ;   Returns: value in rax
@@ -52,6 +62,13 @@ getint:
 ;   Returns float value in xmm0
 getfloat:
     movss   xmm0, [rdi-1]
+    ret
+
+; GetIP
+;   Arguments: boxed float in rdi
+;   Returns float value in xmm0
+getip:
+    mov     rax, [rdi-1]
     ret
 
 ; Eq

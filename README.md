@@ -34,6 +34,7 @@ bytes are the data.
 |------------|-------|
 | 00         | int   |
 | 01         | float |
+| 02         | instruction pointer (for functions) |
 
 Lists are stored as linked lists. The first 8 bytes of the cons cell are the
 adress of the boxed data. The last 8 bytes are the address of the next cons
@@ -69,4 +70,4 @@ For leaf functions, local variables are stored in the 128-byte red zone beneath 
 - [ ] Global variables
 - [ ] Functions
 - [ ] Garbage collection?
-- [ ] Conditionals
+- [x] Conditionals

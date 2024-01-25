@@ -104,7 +104,7 @@ fn run_tests(name: &str, tests: &[(impl ToString, i64)]) {
     let mut all_consts = Vec::new();
     for (i, (rkt, expected)) in tests.iter().enumerate() {
         let e = Parser::parse(Lexer::lex(rkt.to_string()));
-        let (consts, lines) = Compiler::with_consts(all_consts.clone()).compile(e);
+        let (consts, lines) = Compiler::with_consts(all_consts.clone()).compile(&e);
         all_consts = consts;
         asmfile.write_all(format!("f{i}:\n").as_bytes()).unwrap();
         for line in lines {

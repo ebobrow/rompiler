@@ -6,7 +6,8 @@ pub enum Node {
     String(String),
     Float(f64),
     Integer(i64),
-    LetExpr(LetExpr),
+    LetExpr(Box<LetExpr>),
+    LambdaExpr(Box<LambdaExpr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -24,7 +25,13 @@ impl Expr {
 #[derive(Debug, PartialEq)]
 pub struct LetExpr {
     pub bindings: Vec<(String, Node)>,
-    pub body: Box<Node>,
+    pub body: Node,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LambdaExpr {
+    pub params: Vec<String>,
+    pub body: Node,
 }
 
 pub struct Parser {
@@ -42,7 +49,9 @@ impl Parser {
         self.consume_open();
         let op = self.consume_ident().clone().inner_ident();
         if op == "let*" {
-            Node::LetExpr(self.parse_let_expr())
+            Node::LetExpr(Box::new(self.parse_let_expr()))
+        } else if op == "lambda" {
+            Node::LambdaExpr(Box::new(self.parse_lambda_expr()))
         } else {
             let mut params = Vec::new();
             while self.peek_is(|c| c != &Token::RightParen) {
@@ -67,10 +76,20 @@ impl Parser {
         self.consume_close();
         let body = self.parse_param();
         self.consume_close();
-        LetExpr {
-            bindings,
-            body: Box::new(body),
+        LetExpr { bindings, body }
+    }
+
+    fn parse_lambda_expr(&mut self) -> LambdaExpr {
+        self.consume_open();
+        let mut params = Vec::new();
+        while self.peek_is(|c| c != &Token::RightParen && c != &Token::RightBracket) {
+            let name = self.consume_ident().clone().inner_ident();
+            params.push(name);
         }
+        self.consume_close();
+        let body = self.parse_param();
+        self.consume_close();
+        LambdaExpr { params, body }
     }
 
     fn parse_param(&mut self) -> Node {
@@ -131,16 +150,31 @@ mod tests {
         let rkt = String::from("(let* ((x 5) (y 4.0)) (+ x y))");
         assert_eq!(
             Parser::parse(Lexer::lex(rkt)),
-            Node::LetExpr(LetExpr {
+            Node::LetExpr(Box::new(LetExpr {
                 bindings: vec![
                     ("x".into(), Node::Integer(5)),
                     ("y".into(), Node::Float(4.0))
                 ],
-                body: Box::new(Node::Expr(Expr {
+                body: Node::Expr(Expr {
                     op: "+".into(),
                     params: vec![Node::String("x".into()), Node::String("y".into())]
-                }))
-            })
+                })
+            }))
+        );
+    }
+
+    #[test]
+    fn lambda() {
+        let rkt = String::from("(lambda (x y) (+ x y))");
+        assert_eq!(
+            Parser::parse(Lexer::lex(rkt)),
+            Node::LambdaExpr(Box::new(LambdaExpr {
+                params: vec!["x".into(), "y".into()],
+                body: Node::Expr(Expr {
+                    op: "+".into(),
+                    params: vec![Node::String("x".into()), Node::String("y".into())]
+                })
+            }))
         );
     }
 }

@@ -1,6 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+};
 
-use crate::parser::{Expr, LetExpr, Node};
+use crate::{
+    parser::{Expr, LetExpr, Node},
+    writer::Writer,
+};
 
 use lazy_static::lazy_static;
 
@@ -23,10 +29,12 @@ enum Reg {
     R15,
 }
 
+const PARAM_REGS: [Reg; 6] = [Reg::RDI, Reg::RSI, Reg::RDX, Reg::RCX, Reg::R8, Reg::R9];
+
 lazy_static! {
     static ref USABLE_REGS: HashSet<Reg> = {
         let mut s = HashSet::new();
-        s.insert(Reg::RBX);
+        // s.insert(Reg::RBX);
         s.insert(Reg::RCX);
         s.insert(Reg::RDX);
         s.insert(Reg::R8);
@@ -58,11 +66,13 @@ fn assert_params(e: &Expr, n: usize) {
     assert_eq!(e.params.len(), n);
 }
 
+#[derive(Default)]
 pub struct Compiler {
-    lines: Vec<String>,
+    pub lines: Vec<String>,
     preserve: HashSet<Reg>,
-    bindings: HashMap<String, Reg>,
-    consts: Vec<(String, f64)>,
+    pub bindings: HashMap<String, Reg>,
+    pub consts: Vec<(String, f64)>,
+    pub fns: Vec<String>,
 
     /// Number of pushes to stack. If even, pointer will not be aligned after making a call and a
     /// push must be made
@@ -70,32 +80,32 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new() -> Self {
-        Self {
-            lines: Vec::new(),
-            preserve: HashSet::new(),
-            bindings: HashMap::new(),
-            consts: Vec::new(),
-            rsp_parity: 0,
-        }
-    }
-
     pub fn with_consts(consts: Vec<(String, f64)>) -> Self {
         Self {
             lines: Vec::new(),
             preserve: HashSet::new(),
             bindings: HashMap::new(),
             consts,
+            fns: Vec::new(),
             rsp_parity: 0,
         }
     }
 
-    pub fn compile(mut self, t: Node) -> (Vec<(String, f64)>, Vec<String>) {
+    pub fn compile(mut self, t: &Node) -> (Vec<(String, f64)>, Vec<String>) {
+        self.compile_tok(&t, Some(Reg::RAX));
+        assert_eq!(self.preserve.len(), 0);
+        // assert_eq!(self.bindings.len(), 0);
+        assert_eq!(self.rsp_parity, 0);
+        (self.consts, self.lines)
+    }
+
+    pub fn compile_to_file(&mut self, t: Node, file: &mut File) {
         self.compile_tok(&t, Some(Reg::RAX));
         assert_eq!(self.preserve.len(), 0);
         assert_eq!(self.bindings.len(), 0);
         assert_eq!(self.rsp_parity, 0);
-        (self.consts, self.lines)
+
+        self.to_file(file);
     }
 
     fn l(&mut self, line: impl ToString) {
@@ -157,9 +167,26 @@ impl Compiler {
                 // Conditionals
                 "if" => self.compile_if(&e.params[0], &e.params[1], &e.params[2], target),
 
-                _ => unimplemented!(),
+                op => {
+                    if let Some(ip) = self.bindings.get(op) {
+                        self.l(format!("mov rdi, {ip:?}"));
+                        let out = self.call_function("getip");
+                        let old_preserve = self.preserve.clone();
+                        self.preserve.insert(out);
+                        for (param, reg) in e.params.iter().zip(PARAM_REGS) {
+                            self.compile_tok(param, Some(reg));
+                            self.preserve.insert(reg);
+                        }
+                        let out = self.call_function(&format!("{out:?}")[..]);
+                        self.preserve = old_preserve;
+                        out
+                    } else {
+                        unimplemented!("{op}")
+                    }
+                }
             },
-            Node::LetExpr(LetExpr { bindings, body }) => self.compile_let_expr(bindings, body),
+            Node::LetExpr(e) => self.compile_let_expr(&e.bindings, &e.body),
+            Node::LambdaExpr(e) => self.compile_lambda_expr(&e.params, &e.body),
             Node::String(_) | Node::Float(_) | Node::Integer(_) => self.compile_constant(t, target),
         };
         if let Some(target) = target {
@@ -220,6 +247,32 @@ impl Compiler {
         for (name, _) in bindings {
             let reg = self.bindings.remove(name).unwrap();
             self.preserve.remove(&reg);
+        }
+        out
+    }
+
+    fn compile_lambda_expr(&mut self, params: &[String], body: &Node) -> Reg {
+        let mut compiler = Compiler::with_consts(self.consts.clone());
+        // TODO: closure
+        for (name, reg) in params.iter().zip(PARAM_REGS) {
+            compiler.bindings.insert(name.to_string(), reg);
+        }
+        let (consts, mut lines) = compiler.compile(body);
+        self.consts = consts;
+        let offset = lines.len() + 1;
+        lines.push("ret".to_string());
+        lines.extend(self.fns.clone());
+        self.fns = lines;
+        if self.preserve.contains(&Reg::RDI) {
+            self.l("push RDI");
+            self.rsp_parity += 1;
+        }
+        self.l(format!("mov RDI, rbx"));
+        self.l(format!("sub RDI, {}", offset * 3));
+        let out = self.call_function("newip");
+        if self.preserve.contains(&Reg::RDI) {
+            self.l("pop RDI");
+            self.rsp_parity -= 1;
         }
         out
     }
@@ -346,7 +399,7 @@ impl Compiler {
 
     fn next_label_name(&self) -> String {
         if let Some((name, _)) = self.consts.last() {
-            if name.chars().last().unwrap() == 'z' {
+            if name.ends_with('z') {
                 format!("{name}a")
             } else {
                 name.chars()
